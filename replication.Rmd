@@ -1,0 +1,1100 @@
+---
+title: "Code for 'Older Adults' Attitudes Toward Virtual Volunteering During the COVID-19 Pandemic'"
+author: "Peter C. Sun"
+date: "2021"
+output:
+  pdf_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 4
+header-includes:
+- \usepackage{float}
+- \usepackage{pdflscape}
+- \usepackage{threeparttable}
+- \usepackage{threeparttablex}
+- \usepackage{tikz}
+- \usetikzlibrary{shapes,arrows}
+- \newcommand{\blandscape}{\begin{landscape}}
+- \newcommand{\elandscape}{\end{landscape}}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(openxlsx)
+library(writexl)
+library(lubridate)
+library(ggsci)
+library(scales)
+library(ggthemes)
+library(knitr)
+library(kableExtra)
+library(glue)
+library(lsr)
+library(broom)
+library(ggpubr)
+library(stats)
+library(latex2exp)
+library(grDevices)
+library(viridis)
+library(tableone)
+options(scipen=999)
+```
+
+```{r include=FALSE}
+# Import survey data
+df <- read_csv("private/data.csv")
+
+# Clean Data and Store Question Text
+df2 <- df
+
+# Store question text in a tibble
+qs <- df2 %>%
+  slice(1) %>%
+  rowid_to_column() %>%
+  pivot_longer(-rowid) %>%
+  select(Question_ID = name, Question_Text = value)
+qs
+
+# Remove first two rows and invalid responses
+df3 <- df2 %>% 
+  slice(-(1:2)) %>%
+  filter(ResponseId != "R_1ps9RVwaPTmWOGl") %>% # test run
+  filter(ResponseId != "R_2ZDD8JbWrNmv6ph") %>% # already took the survey before
+  filter(ResponseId != "R_3dFbeQ3tUhGl1vf") %>% # terminated participation midway
+  filter(ResponseId != "R_3DckGi0qGa4PZpQ") %>% # all empty
+  filter(ResponseId != "R_SVFgTPQkWtXaOPf") %>% # all empty
+  filter(ResponseId != "R_3EuvWRo7XIEZRvl") %>% # incomplete
+  filter(ResponseId != "R_3qkYKhMgSZ4NLkA") %>% # incomplete
+  filter(ResponseId != "R_2pYLNVLF0JX4Bj4") %>% # incomplete
+  filter(ResponseId != "R_udA4n0g6JuPXcPf") # duplicate response
+
+# Recode variables
+DK <- "Don't know or prefer not to answer"
+df.recoded <- df3 %>%
+  mutate_at(vars(Q2), as.factor) %>%
+  mutate(Q2 = recode(Q2, `1` = "< 50", `2` = "51-60", `3` = "61-70", 
+                     `4` = "71-80", `5` = "81-90", `6` = "91-100",
+                     `99` = DK)) %>%
+  # use "other" value if "other text value" is not empty
+  mutate(Q3 = ifelse(is.na(Q3_88_TEXT), Q3, Q3_88_TEXT)) %>%
+  mutate_at(vars(Q3:Q4), as.factor) %>%
+  mutate(Q3 = recode(Q3, `1` = "Clayton", `2` = "East St. Louis", 
+                   `3` = "Ferguson-Florissant", `4` = "Mehlville",
+                   `5` = "Northwest", `6` = "Rockwood", `7` = "St. Charles",
+                   `88` = "Other", `99` = DK,
+                   `Northwest Jefferson County` = "Northwest")) %>%
+  mutate(Q4 = recode(Q4, `1` = "Male", `2` = "Female",
+                     `88` = "Other", `99` = DK)) %>%
+  mutate(Q5 = ifelse(is.na(Q5_9_TEXT), Q5, Q5_9_TEXT)) %>%
+  mutate_at(vars(Q5:Q13), as.factor) %>%
+  mutate(Q5 = recode(Q5, `1` = "Hispanic/Latino",
+                     `2` = "American Indian or Alaska",
+                     `3` = "Native", `4` = "Black or African American",
+                     `5` = "White", `6` = "Asian", `7` = "Native Hawaiian",
+                     `8` = "Pacific Islander", `9` = "Other",
+                     `99` = DK,
+                     `Caucasian` = "White",
+                     `5,6` = "Two or more races",
+                     `White Latina` = "Two or more races")) %>%
+  mutate(Q6 = recode(Q6, `1` = "Divorced", `2` = "Married",
+                     `3` = "Partnered", `4` = "Single", `5` = "Widowed",
+                     `99` = DK)) %>%
+  mutate(Q7 = recode(Q7, `1` = "Grade school", `2` = "High school",
+                     `3` = "Some college", `4` = "College degree",
+                     `5` = "Post-graduate", `99` = DK)) %>%
+  mutate(Q8 = recode(Q8, `1` = "Not working/retired", `2` = "Looking for work",
+                     `3` = "Working part time", `4` = "Working full time",
+                     `99` = DK)) %>%
+  mutate(Q9 = recode(Q9, `1` = "< $15,000", `2` = "$15,000 - $24,999",
+                     `3` = "$25,000 - $49,000", `4` = "$50,000 - $74,999",
+                     `5` = "> $75,000", `99` = DK)) %>%
+  mutate(PC = ifelse(Q10_PC %in% c("1", "2", "3", "4"), "Yes",
+              ifelse(Q10_PC == "88", "No",
+              ifelse(Q10_PC == "99", DK, NA)))) %>%
+  mutate(Q10_PC = recode(Q10_PC, `1` = "Very Easy", `2` = "Easy",
+                         `3` = "Difficult", `4` = "Very Difficult",
+                         `88` = "Have not used before or do not have at home",
+                         `99` = DK)) %>%
+  mutate(PHONE = ifelse(Q10_PHONE %in% c("1", "2", "3", "4"), "Yes",
+              ifelse(Q10_PHONE == "88", "No",
+              ifelse(Q10_PHONE == "99", DK, NA)))) %>%
+  mutate(Q10_PHONE = recode(Q10_PHONE, `1` = "Very Easy", `2` = "Easy",
+                         `3` = "Difficult", `4` = "Very Difficult",
+                         `88` = "Have not used before or do not have at home",
+                         `99` = DK)) %>%
+  mutate(INT = ifelse(Q10_INT %in% c("1", "2", "3", "4"), "Yes",
+              ifelse(Q10_INT == "88", "No",
+              ifelse(Q10_INT == "99", DK, NA)))) %>%
+  mutate(Q10_INT = recode(Q10_INT, `1` = "Very Easy", `2` = "Easy",
+                         `3` = "Difficult", `4` = "Very Difficult",
+                         `88` = "Have not used before or do not have at home",
+                         `99` = DK)) %>%
+  mutate(VID = ifelse(Q10_VID %in% c("1", "2", "3", "4"), "Yes",
+              ifelse(Q10_VID == "88", "No",
+              ifelse(Q10_VID == "99", DK, NA)))) %>%
+  mutate(Q10_VID = recode(Q10_VID, `1` = "Very Easy", `2` = "Easy",
+                         `3` = "Difficult", `4` = "Very Difficult",
+                         `88` = "Have not used before or do not have at home",
+                         `99` = DK)) %>%
+  mutate(Q11 = recode(Q11, `1` = "Yes", `0` = "No", `99` = DK)) %>%
+  mutate(Q12 = recode(Q12, `1` = "Very uncomfortable", `2` = "Uncomfortable",
+                      `3` = "Comfortable", `4` = "Very comfortable",
+                      `99` = DK)) %>%
+  mutate(Q13 = recode(Q13, `1` = "Yes", `0` = "No", `99` = DK)) %>%
+  mutate(Q14 = ifelse(Q14 == "88" & is.na(Q14_88_TEXT), NA, Q14)) %>% 
+  separate(col = Q14,
+         into = c("Q14_1", "Q14_2", "Q14_3", "Q14_4", "Q14_5"),
+         sep = ",",
+         remove = TRUE,
+         extra = "warn",
+         fill = "right") %>%
+  mutate_at(vars(starts_with("Q14")), ~recode(., `1` = "Too expensive", `2` = "Not easily available",
+                      `3` = "Too hard to learn how to use",
+                      `4` = "Too much time to learn how to use",
+                      `5` = "Too difficult to keep up with \nall the changes in technology",
+                      `6` = "Opposed to using new technologies",
+                      `7` = "Prefer other forms of communication",
+                      `88` = "Other",
+                      `99` = DK)) %>% 
+  mutate_at(vars(starts_with("Q14")), ~ifelse(. == "Other", NA, .)) %>% 
+  mutate(Q14_88_TEXT = recode(Q14_88_TEXT,
+                              `Haven't had the need to use.` = "Don't have a need for it",
+                              `haven't had the opportunity` = "Don't have a need for it",
+                              `My computer does not have a camera.` = "Don't have equipment",
+                              `Don't have a need for it` = "Don't have a need for it",
+                              `no need` = "Don't have a need for it",
+                              `haven't had the opportunity` = "Don't have a need for it",
+                              `Don't know how to use` = "Too hard to learn how to use")) %>%
+  mutate_at(vars(Q14_1:Q20), as.factor) %>%
+  mutate(Q15 = recode(Q15, `1` = "Online", `2` = "In-Person",
+                      `3` = "Mix of both online and in-person", `99` = DK)) %>%
+  mutate(Q16 = recode(Q16, `4` = "Very likely", `3` = "Somewhat likely",
+                      `2` = "Not very likely", `1` = "Not at all likely",
+                      `99` = DK)) %>%
+  mutate(Q18 = recode(Q18, `1` = "Wouldn't be beneficial at all",
+                      `2` = "Will be beneficial but will not be a \nreplacement for in-person tutoring",
+                      `3` = "Will be just as beneficial as \nin-person tutoring",
+                      `99` = DK)) %>%
+  mutate(Q19 = recode(Q19, `1` = "Not at all concerned", `2` = "Slightly concerned",
+                      `3` = "Somewhat concerned", `4` = "Moderately concerned",
+                      `5` = "Extremely concerned", `99` = DK)) %>%
+  mutate(Q20 = recode(Q20, `1` = "Not at all concerned", `2` = "Slightly concerned",
+                      `3` = "Somewhat concerned", `4` = "Moderately concerned",
+                      `5` = "Extremely concerned", `99` = DK))
+
+```
+
+
+```{r include=FALSE}
+# Define some helper functions
+get_percent <- function(var) {
+  
+  # Select variable
+  df <- select(df.recoded, all_of(var))
+  
+  # Rename var to x
+  names(df) <- "x"
+  
+  # Calculate percent (y) and order by descending order
+  df2 <- df %>%
+    filter(!is.na(x)) %>%
+    count(x) %>%
+    mutate(y = n/sum(n))
+
+  # Sample Size
+  sample_size <- sum(df2$n)
+    
+  # Without DK
+  df.no_dk <- df2 %>%
+    filter(x != DK) %>%
+    mutate(text = ifelse(
+      y < 0.005|y == 0.005,
+      "< 1%",
+      percent(y, accuracy = 1)))
+  
+  # DK Count
+  df.dk <- df2 %>%
+    filter(x == DK)
+  
+  # Return df
+  return(list(
+    df_plot = df.no_dk,
+    dont_know = df.dk$n,
+    sample_size = sample_size
+  ))
+}
+
+# Get percent for questions that allow multiple responses
+get_percent_multi <- function(vec_of_cols) {
+  
+  # Select variable
+  d <- select(df.recoded, all_of(vec_of_cols))
+  
+  d2 <- d %>%
+    rowid_to_column() %>%
+    pivot_longer(-rowid, values_to = "x") %>%
+    filter(!is.na(x))
+  
+  correct_sample_size <- length(unique(d2$rowid))
+  
+  d3 <- d2 %>%
+    count(x) %>%
+    mutate(y = n/correct_sample_size)
+
+  # Sample Size
+  sample_size <- correct_sample_size
+    
+  # Without DK
+  df.no_dk <- d3 %>%
+    filter(x != DK) %>%
+    mutate(text = percent(y, accuracy = 1))
+  
+  # DK Count
+  df.dk <- d3 %>%
+    filter(x == DK)
+  
+  # Return df
+  return(list(
+    df_plot = df.no_dk,
+    dont_know = df.dk$n,
+    sample_size = sample_size
+  ))
+}
+
+# Plot frequency bar plot
+get_plot <- function(df, x_lab = "", title = "", caption = "") {
+
+  caption_auto = ""
+  if (length(df$dont_know) == 0) {
+    caption_auto = paste0("Sample size (n = ", df$sample_size, ")")
+  } else {
+    caption_auto = paste0("Sample size (n = ", df$sample_size, "); Don't know or prefer not to answer (n = ", df$dont_know, ")")
+  }
+  
+  p <- ggplot(df$df_plot, aes(x = x, y = y, fill = x)) +
+    geom_bar(stat = "identity") +
+    geom_text(aes(label = text), hjust = -0.2, size = 3) +
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1),
+                       expand = c(0, 0),
+                       limits = c(0, max(df$df_plot$y)+0.1)) +
+    theme_classic() +
+    coord_flip(clip = "on") + # default
+    scale_fill_npg() +
+    labs(x = "", y = "", title = title,
+         caption = caption_auto) +
+    theme(legend.position = "none",
+          plot.title = element_text(size = 8),
+          plot.caption = element_text(size = 7),
+          text = element_text(size = 10))
+  return(p)
+}
+```
+
+\newpage
+# Descriptive Statistics
+
+## Table 2. Demographic Characteristics of Participants (N = 229)
+
+```{r echo=F}
+df.tab1 <- df.recoded %>%
+  select(Age = Q2,
+         Gender = Q4,
+         `Race/Ethnicity` = Q5,
+         `Marital Status` = Q6,
+         `Highest Level of Education` = Q7,
+         `Employment Status` = Q8,
+         `Annual Household Income` = Q9)
+tab1.vars <- names(df.tab1)
+tab1 <- CreateTableOne(vars = tab1.vars, data = df.tab1, test = FALSE)
+print(tab1)
+tab1b <- print(tab1, quote = FALSE, noSpaces = TRUE, printToggle = FALSE, smd = TRUE)
+```
+
+\newpage
+## Demographics
+
+###  Age
+```{r echo=FALSE, fig.width = 5.5, fig.height = 2.5, fig.align = "center"}
+get_plot(get_percent("Q2"), title = "Q2: What is your age?")
+```
+
+### School District of Last Oasis Volunteer Experience
+```{r echo=FALSE, fig.width = 5.5, fig.height = 2.5, fig.align = "center"}
+get_plot(get_percent("Q3"), title = "Q3: Please select the school district in which you last volunteered.")
+```
+
+### Gender
+```{r echo=FALSE, fig.width = 5.5, fig.height = 2.5, fig.align = "center"}
+get_plot(get_percent("Q4"), title = "Q4: What is your gender?")
+```
+
+### Ethnicity/Race
+```{r echo=FALSE, fig.width = 5.5, fig.height = 2.5, fig.align = "center"}
+get_plot(get_percent("Q5"), title = "Q5: What is your ethnicity/race? (Please select all that apply.)")
+```
+
+### Marital Status
+```{r echo=FALSE, fig.width = 5.5, fig.height = 2.5, fig.align = "center"}
+get_plot(get_percent("Q6"), title = "Q6: What is your marital status?")
+```
+
+### Education
+```{r echo=FALSE, fig.width = 5.5, fig.height = 2.5, fig.align = "center"}
+get_plot(get_percent("Q7"), title = "Q7: What is the highest level of education you have completed?")
+```
+
+### Employment Status
+```{r echo=FALSE, fig.width = 5.5, fig.height = 2.5, fig.align = "center"}
+get_plot(get_percent("Q8"), title = "Q8: What is your employment status?")
+```
+
+### Annual Household Income
+```{r echo=FALSE, fig.width = 5.5, fig.height = 2.5, fig.align = "center"}
+df.q9 <- get_percent("Q9")
+get_plot(get_percent("Q9"), title = "Q9: What is your annual household income?")
+```
+
+\newpage
+
+## Technology
+
+### Use of Technology at Home
+
+```{r include=FALSE}
+# Merge access questions
+t1 <- get_percent("PC")$df_plot %>%
+  mutate(Type = "Computer")
+t2 <- get_percent("PHONE")$df_plot %>%
+  mutate(Type = "Smartphone")
+t3 <- get_percent("INT")$df_plot %>%
+  mutate(Type = "Internet")
+t4 <- get_percent("VID")$df_plot %>%
+  mutate(Type = "Online Video Call")
+tt <- bind_rows(t1, t2, t3, t4) %>%
+  filter(x == "Yes") %>%
+  mutate(Type = fct_reorder(Type, y, .desc = FALSE))
+```
+
+```{r echo=FALSE, fig.width = 5.5, fig.height = 2.5, fig.align = "center"}
+ggplot(tt, aes(x = Type, y = y, fill = Type)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_text(aes(label = text, group = Type), hjust = -0.2,
+            position = position_dodge(width = 1),
+            size = 3) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1),
+                     expand = c(0, 0),
+                     limits = c(0, max(tt$y)+0.1)) +
+  theme_classic() +
+  coord_flip(clip = "on") + # default
+  scale_fill_npg() +
+  labs(x = "", y = "", title = "Q10: If you have used any of the following devices or services at your own home, \nhow easy or difficult have they been to use?") +
+  theme(legend.position = "none",
+      plot.title = element_text(size = 8),
+      plot.caption = element_text(size = 7),
+      text = element_text(size = 10))
+```
+
+### Ease of Technology Use
+
+```{r include=FALSE}
+ease <- function(var) {
+  e <- df.recoded %>%
+    select(x = var) %>%
+    filter(x != "Have not used before or do not have at home") %>%
+    filter(x != DK) %>%
+    mutate(x = factor(x, levels = c("Very Difficult", "Difficult", "Easy", "Very Easy"))) %>% # this will keep the 0s
+    count(x, .drop = FALSE) %>%
+    mutate(y = n/sum(n)) %>%
+    mutate(x = fct_reorder(x, y, .desc = FALSE)) %>%
+    mutate(text = percent(y, accuracy = 1))
+  return(e)
+}
+
+e1 <- ease("Q10_PC") %>%
+  mutate(Type = "Computer")
+e2 <- ease("Q10_PHONE") %>%
+  mutate(Type = "Smartphone")
+e3 <- ease("Q10_INT") %>%
+  mutate(Type = "Internet")
+e4 <- ease("Q10_VID") %>%
+  mutate(Type = "Online Video Call")
+
+ee <- bind_rows(e1, e2, e3, e4)
+```
+
+```{r echo=FALSE, fig.width = 6, fig.height = 4, fig.align = "center"}
+ggplot(ee, aes(x = Type, y = y, fill = x)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_text(aes(label = text, group = x), 
+            vjust = -0.2,
+            position = position_dodge(width = 0.9),
+            size = 3) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1),
+                     expand = c(0, 0),
+                     limits = c(0, max(ee$y)+0.1)) +
+  theme_classic() +
+  scale_fill_npg() +
+  labs(x = "", y = "", fill = "Ease of Use", title = "Q10: If you have used any of the following devices or services at your own home, \nhow easy or difficult have they been to use?") +
+  theme(legend.position = "top",
+        plot.title = element_text(size = 8),
+        plot.caption = element_text(size = 7),
+        text = element_text(size = 10))
+```
+
+\newpage
+### Reliable Internet Connection
+```{r echo=FALSE, fig.width = 5.5, fig.height = 2.5, fig.align = "center"}
+get_plot(get_percent("Q11"), title = "Q11: Is your Internet connection reliable (e.g., capable of watching videos smoothly; \nstable connection)?")
+```
+
+### Level of Comfort Using the Internet
+```{r echo=FALSE, fig.width = 5.5, fig.height = 2.5, fig.align = "center"}
+get_plot(get_percent("Q12"), title = "Q12: What is your level of comfort when using the Internet?")
+```
+
+\newpage
+### Interest in Trying Online Video Calls
+```{r echo=FALSE, fig.width = 5.5, fig.height = 2.5, fig.align = "center"}
+get_plot(get_percent("Q13"), title = "Q13: Would you be interested in trying online video calls, such as Zoom or Skype?")
+```
+
+### Reason for Not Using Online Video Calls
+```{r echo=FALSE, fig.width = 5.5, fig.height = 2.5, fig.align = "center"}
+get_plot(get_percent_multi(c("Q14_1", "Q14_2", "Q14_3", "Q14_4", "Q14_5", "Q14_88_TEXT")), title = "Q14: We are interested in why you do not use online video calls. \nPlease select all that apply.")
+```
+
+\newpage
+## Online Tutoring
+
+### Preference for Online, In-Person, or Mix of Online and In-Person Tutoring
+```{r echo=FALSE, fig.width = 5.5, fig.height = 2.5, fig.align = "center"}
+get_plot(get_percent("Q15"), title = "Q15: If you have the opportunity to tutor children online or in-person, \nwhich would you prefer? (By online tutoring, we mean talking to children \nusing technology such as Zoom or Skype.)")
+```
+
+### Likelihood of Participating in Online Tutoring Program
+```{r echo=FALSE, fig.width = 5.5, fig.height = 2.5, fig.align = "center"}
+get_plot(get_percent("Q16"), title = "Q16: How likely would you be to participate in an online tutoring program?")
+```
+
+### Comparison of Online vs. In-Person Tutoring Benefits
+```{r echo=FALSE, fig.width = 5.5, fig.height = 2.5, fig.align = "center"}
+get_plot(get_percent("Q18"), title = "Q18: If tutoring in Fall 2020 has to be online because of recommended \nlimits on social contact during the coronavirus outbreak, the tutoring \nexperience...")
+```
+
+### Concern for Oasis Resources for Online Tutoring
+```{r echo=FALSE, fig.width = 5.5, fig.height = 2.5, fig.align = "center"}
+get_plot(get_percent("Q19"), title = "Q19: If tutoring in Fall 2020 is online, how concerned would you be about resources, \nequipment, and support from Oasis?")
+```
+
+### Concern for In-Person Tutoring During Coronavirus Outbreak
+```{r echo=FALSE, fig.width = 5.5, fig.height = 2.5, fig.align = "center"}
+get_plot(get_percent("Q20"), title = "Q20: If tutoring in Fall 2020 is in-person and tutoring takes place inside schools, \nhow concerned would you be given that COVID-19 may still be an issue?")
+```
+
+\newpage
+
+# Bivariate Analyses
+
+## Combined Use of Technology at Home
+
+```{r include=FALSE}
+df.tech <- df3 %>%
+  select(t1 = Q10_PC, t2 = Q10_PHONE, t3 = Q10_INT, t4 = Q10_VID) %>%
+  mutate_all(~ifelse(. %in% c("1", "2", "3", "4"), 1, 0)) %>%
+  mutate(three = ifelse(t1 == 1 & t2 == 1 & t3 == 1, 1, 0)) %>%
+  mutate(four = ifelse(t1 == 1 & t2 == 1 & t3 == 1 & t4 == 1, 1, 0))
+  
+df.tech %>%
+  count(three, four)
+
+df.tech %>%
+  count(four)
+
+have_three = percent(205/227, accuracy = 1)
+have_four = percent(180/227, accuracy = 1)
+```
+
+A total of 205 (90\%) respondents have used the Internet, computer, and smartphone before at home.
+
+A total of 180 (79\%) respondents have used the Internet, computer, smartphone, and online video calls before at home.
+
+## Difficulty of Technology Use by School District
+
+```{r echo=FALSE}
+get_ease <- function(device_var, device_name) {
+  ar0 <- df3 %>%
+    mutate(Q3 = ifelse(is.na(Q3_88_TEXT), Q3, Q3_88_TEXT)) %>%
+    select(dist = Q3, ease = all_of(device_var)) %>%
+    rowid_to_column() %>%
+    mutate(invalid = ifelse(ease %in% c("88", "99", NA)|dist %in% c("88", "99", NA), 1, 0)) %>%
+    filter(invalid != 1) %>%
+    select(dist, ease) %>%
+    mutate(dist = recode(dist, `1` = "Clayton", `2` = "East St. Louis", 
+         `3` = "Ferguson-Florissant", `4` = "Mehlville",
+         `5` = "Northwest", `6` = "Rockwood", `7` = "St. Charles",
+         `Northwest Jefferson County` = "Northwest")) %>%
+    mutate(ease = recode(ease, `1` = "Very easy or easy", `2` = "Very easy or easy",
+                           `3` = "Very difficult or difficult", `4` = "Very difficult or difficult",
+                           `88` = "Have not used before or do not have at home",
+                           `99` = DK)) %>%
+    mutate(ease = factor(ease, levels = c("Very easy or easy", "Very difficult or difficult"))) %>% # this will keep the 0s
+    count(dist, ease, .drop = FALSE) %>%
+    group_by(dist) %>%
+    mutate(pct = n/sum(n)) %>%
+    ungroup() %>%
+    mutate(text = percent(pct, accuracy = 1)) %>%
+    filter(dist != "Oasis Institute Training") %>%
+    filter(dist != "East St. Louis") %>%
+    filter(dist != "Northwest") %>%
+    filter(ease == "Very difficult or difficult") %>%
+    mutate(type = device_name)
+  return(ar0)
+}
+
+device_vars <- c("Q10_PC", "Q10_VID")
+device_names <- c("Computer", "Online Video Call")
+ease_df <- map2_dfr(device_vars, device_names, get_ease)
+
+ggplot(ease_df, aes(x = dist, y = pct, fill = type)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_text(aes(label = text, group = type), 
+            vjust = -0.2,
+            position = position_dodge(width = 0.9),
+            size = 2.5) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1),
+                     expand = c(0, 0),
+                     limits = c(0, max(ease_df$pct)+0.1)) +
+  theme_classic() +
+  scale_fill_npg() +
+  labs(x = "\nSchool District", y = "Very difficult or difficult\n", fill = "", title = "",
+       caption = "Due to small sample sizes, Oasis Institute Training, East St. Louis, and Northwest are omitted in the above figure.") +
+  theme(legend.position = "top",
+        plot.title = element_text(size = 8),
+        plot.caption = element_text(size = 7),
+        text = element_text(size = 9))
+```
+
+## Likelihood of Tutoring Online by School District
+
+```{r echo=FALSE}
+ar1 <- df3 %>%
+  mutate(Q3 = ifelse(is.na(Q3_88_TEXT), Q3, Q3_88_TEXT)) %>%
+  select(dist = Q3, like = Q16) %>%
+  rowid_to_column() %>%
+  mutate(invalid = ifelse(like %in% c("88", "99", NA)|dist %in% c("88", "99", NA), 1, 0)) %>%
+  filter(invalid != 1) %>%
+  select(dist, like) %>%
+  mutate(dist = recode(dist, `1` = "Clayton", `2` = "East St. Louis", 
+       `3` = "Ferguson-Florissant", `4` = "Mehlville",
+       `5` = "Northwest", `6` = "Rockwood", `7` = "St. Charles",
+       `Northwest Jefferson County` = "Northwest")) %>%
+  mutate(like = recode(like, `4` = "Very or somewhat likely", `3` = "Very or somewhat likely",
+          `2` = "Not very likely or not at all likely", `1` = "Not very likely or not at all likely")) %>%
+  mutate(like = factor(like, levels = c("Very or somewhat likely", "Not very likely or not at all likely"))) %>% 
+  count(dist, like, .drop = FALSE) %>%
+  group_by(dist) %>%
+  mutate(pct = n/sum(n)) %>%
+  ungroup() %>%
+  mutate(text = percent(pct, accuracy = 1)) %>%
+  filter(dist != "Oasis Institute Training") %>%
+  filter(dist != "East St. Louis") %>%
+  filter(dist != "Northwest")
+
+ggplot(ar1, aes(x = dist, y = pct, fill = like)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_text(aes(label = text, group = like), 
+            vjust = -0.2,
+            position = position_dodge(width = 0.9),
+            size = 2.5) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1),
+                     expand = c(0, 0),
+                     limits = c(0, max(ar1$pct)+0.1)) +
+  theme_classic() +
+  scale_fill_npg() +
+  labs(x = "\nSchool District", y = "", fill = "", title = "Q16: How likely would you be to participate in an online tutoring program?",
+       caption = "Due to small sample sizes, Oasis Institute Training (n = 1), East St. Louis (n = 4), and Northwest (n = 9) are omitted in the above figure.") +
+  theme(legend.position = "top",
+        plot.title = element_text(size = 8),
+        plot.caption = element_text(size = 7),
+        text = element_text(size = 9))
+
+ar1.samp <- ar1 %>%
+  group_by(dist) %>%
+  summarise(tot = sum(n), .groups = "drop")
+
+kable(ar1.samp,
+      col.names = c("School District", "Total Respondents"),
+      format = "latex",
+      booktabs = T,
+      caption = "Total Respondents by School District") %>%
+  kable_styling(position = "center") %>%
+  kable_styling(latex_options = "hold_position")
+```
+
+## Likelihood of Tutoring Online by Education Level
+
+```{r echo=FALSE}
+df.edu <- df3 %>%
+  select(edu = Q7, like = Q16) %>%
+  rowid_to_column() %>%
+  mutate(across(everything(), ~ifelse(. %in% c("88", "99"), NA, .))) %>%
+  drop_na() %>%
+  mutate(edu = recode(edu, `1` = "Grade school", `2` = "High school",
+                     `3` = "Some college", `4` = "College degree",
+                     `5` = "Post-graduate", `99` = DK)) %>%
+  mutate(like = recode(like, `4` = "Very or somewhat likely", `3` = "Very or somewhat likely",
+          `2` = "Not very likely or not at all likely", `1` = "Not very likely or not at all likely")) %>%
+  mutate(like = factor(like, levels = c("Very or somewhat likely", "Not very likely or not at all likely"))) %>% 
+  mutate(edu = factor(edu, levels = c("High school", "Some college", "College degree", "Post-graduate"))) %>% 
+  count(edu, like, .drop = FALSE) %>%
+  group_by(edu) %>%
+  mutate(pct = n/sum(n)) %>%
+  ungroup() %>%
+  mutate(text = percent(pct, accuracy = 1)) %>%
+  mutate(type = "Very or somewhat likely to tutor online")
+
+ggplot(df.edu, aes(x = edu, y = pct, fill = like)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_text(aes(label = text, group = like),
+            vjust = -0.2,
+            position = position_dodge(width = 0.9),
+            size = 2.5) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1),
+                     expand = c(0, 0),
+                     limits = c(0, max(df.edu$pct)+0.1)) +
+  theme_classic() +
+  scale_fill_npg() +
+  labs(x = "\nEducation Level", y = "", fill = "", title = "Q16: How likely would you be to participate in an online tutoring program?",
+       caption = "") +
+  theme(legend.position = "top",
+        plot.title = element_text(size = 8),
+        plot.caption = element_text(size = 7),
+        text = element_text(size = 9))
+
+df.edu.samp <- df.edu %>%
+  group_by(edu) %>%
+  summarise(tot = sum(n), .groups = "drop")
+
+kable(df.edu.samp,
+      col.names = c("Education Level", "Total Respondents"),
+      format = "latex",
+      booktabs = T,
+      caption = "Total Respondents by Education Level") %>%
+  kable_styling(position = "center") %>%
+  kable_styling(latex_options = "hold_position")
+```
+
+\newpage
+
+## Concern for In-Person Tutoring by School District
+
+```{r echo=FALSE}
+ar2 <- df3 %>%
+  mutate(Q3 = ifelse(is.na(Q3_88_TEXT), Q3, Q3_88_TEXT)) %>%
+  select(dist = Q3, concern = Q20) %>%
+  rowid_to_column() %>%
+  mutate(invalid = ifelse(concern == "99"|dist %in% c("88", "99"), 1, 0)) %>%
+  filter(invalid != 1) %>%
+  select(dist, concern) %>%
+  mutate(dist = recode(dist, `1` = "Clayton", `2` = "East St. Louis", 
+       `3` = "Ferguson-Florissant", `4` = "Mehlville",
+       `5` = "Northwest", `6` = "Rockwood", `7` = "St. Charles",
+       `Northwest Jefferson County` = "Northwest")) %>%
+  mutate(concern = recode(concern, `1` = "Not at all or slightly concerned", `2` = "Not at all or slightly concerned",
+                  `3` = "Somewhat concerned", `4` = "Extremely or moderately concerned",
+                  `5` = "Extremely or moderately concerned")) %>% 
+  mutate(concern = factor(concern, levels = c("Not at all or slightly concerned", "Somewhat concerned", "Extremely or moderately concerned"))) %>% # this will keep the 0s
+  count(dist, concern, .drop = FALSE) %>%
+  group_by(dist) %>%
+  mutate(pct = n/sum(n)) %>%
+  ungroup() %>%
+  mutate(text = percent(pct, accuracy = 1)) %>%
+  filter(dist != "Oasis Institute Training") %>%
+  filter(dist != "East St. Louis") %>%
+  filter(dist != "Northwest")
+
+ggplot(ar2, aes(x = dist, y = pct, fill = concern)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_text(aes(label = text, group = concern), 
+            vjust = -0.2,
+            position = position_dodge(width = 0.9),
+            size = 2.5) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1),
+                     expand = c(0, 0),
+                     limits = c(0, max(ar1$pct)+0.1)) +
+  theme_classic() +
+  scale_fill_npg() +
+  labs(x = "\nSchool District", y = "", fill = "", title = "Q20: If tutoring in Fall 2020 is in-person and tutoring takes place inside schools, \nhow concerned would you be given that COVID-19 may still be an issue?",
+       caption = "Due to small sample sizes, Oasis Institute Training (n = 1), East St. Louis (n = 4), and Northwest (n = 9) are omitted in the above figure.") +
+  theme(legend.position = "top",
+        plot.title = element_text(size = 8),
+        plot.caption = element_text(size = 7),
+        text = element_text(size = 7))
+```
+
+\blandscape
+
+\newpage
+
+## Table 3. Tests of Associations Between Demographics and Attitudes Toward Technology and Tutoring.
+
+```{r include=FALSE}
+df.brief <- df.recoded %>%
+  rename(dist = Q3, age = Q2, edu = Q7, sex = Q4, race = Q5, marital = Q6, inc = Q9) %>%
+  mutate(t1 = Q10_PC, t2 = Q10_PHONE, t3 = Q10_INT, t4 = Q10_VID) %>%
+  mutate_at(vars(t1:t4), ~ifelse(. %in% c("Very Easy", "Easy", "Difficult", "Very Difficult"), 1, 0)) %>%
+  mutate(num_tech = rowSums(across(t1:t4))) %>%
+  mutate(num_tech = factor(num_tech, levels = c(0, 1, 2, 3, 4))) %>%
+  mutate(Q16 = recode(Q16, `Not at all likely` = "Not very or not at all likely",
+                      `Not very likely` = "Not very or not at all likely",
+                      `Somewhat likely` = "Very or somewhat likely",
+                      `Very likely` = "Very or somewhat likely")) %>%
+  mutate(Q19 = recode(Q19, `Not at all concerned` = "Not at all concerned",
+                      `Slightly concerned` = "Somewhat or slightly concerned",
+                      `Somewhat concerned` = "Somewhat or slightly concerned",
+                      `Moderately concerned` = "Extremely or moderately concerned",
+                      `Extremely concerned` = "Extremely or moderately concerned")) %>%
+  mutate(Q20 = recode(Q20, `Not at all concerned` = "Not at all concerned",
+                      `Slightly concerned` = "Somewhat or slightly concerned",
+                      `Somewhat concerned` = "Somewhat or slightly concerned",
+                      `Moderately concerned` = "Extremely or moderately concerned",
+                      `Extremely concerned` = "Extremely or moderately concerned")) %>%
+  mutate(Q10_PC = recode(Q10_PC,
+                         `Very Easy` = "Very easy or easy",
+                         `Easy` = "Very easy or easy",
+                         `Difficult` = "Very difficult or difficult",
+                         `Very Difficult` = "Very difficult or difficult",
+                         .default = NA_character_)) %>%
+  mutate(Q10_PC = fct_drop(Q10_PC)) %>%
+  mutate(Q18 = recode(Q18, `Will be beneficial but will not be a \nreplacement for in-person tutoring` = "Virtual beneficial, but not replacement of in-person",
+                      `Will be just as beneficial as \nin-person tutoring` = "Virtual just as beneficial as in-person",
+                      `Wouldn't be beneficial at all` = "Virtual not beneficial"))
+
+get_chi <- function(q, iv, iv_name, exclude) {
+  q <- as.name(q)
+  iv <- as.name(iv)
+  df.test <- df.brief %>%
+    select(!!iv, !!q) %>%
+    drop_na() %>%
+    filter(!!iv != DK) %>%
+    filter(!!q != DK) %>%
+    filter(!(!!iv %in% exclude)) %>%
+    filter(!(!!iv %in% c("91-100")))
+  cs <- chisq.test(pull(df.test, !!iv), pull(df.test, !!q)) %>%
+    tidy() %>%
+    mutate(Question = deparse(q)) %>%
+    mutate(IV = iv_name) %>%
+    mutate(Sig = ifelse(p.value <= 0.05, "*", "NS")) %>%
+    mutate(CramersV = lsr::cramersV(pull(df.test, !!iv), pull(df.test, !!q)))
+  return(cs)
+}
+
+qs.test <- tribble(
+  ~Question, ~q_title,
+  "Q10_PC", "Difficulty of Computer Use",
+  "Q12", "Uncomfortable Using Internet",
+  "Q16", "Likely to Tutor Virtually",
+  "Q18", "Virtual Tutoring Not Beneficial",
+  "Q19", "Concern for Oasis Resources for Virtual Tutoring",
+  "Q20", "Concern for In-Person Tutoring",
+  "num_tech", "Number of Technology Devices"
+)
+
+cs1 <- map_dfr(pull(qs.test, Question), get_chi, "dist", "School District", exclude = c("Oasis Institute Training", "East St. Louis", "Northwest"))
+cs2 <- map_dfr(pull(qs.test, Question), get_chi, "age", "Age", exclude = c("Oasis Institute Training"))
+cs3 <- map_dfr(pull(qs.test, Question), get_chi, "edu", "Education", exclude = c("Oasis Institute Training"))
+cs4 <- map_dfr(pull(qs.test, Question), get_chi, "sex", "Gender", exclude = c("Oasis Institute Training"))
+cs5 <- map_dfr(pull(qs.test, Question), get_chi, "race", "Race", exclude = c("Oasis Institute Training"))
+cs6 <- map_dfr(pull(qs.test, Question), get_chi, "inc", "Income", exclude = c("Oasis Institute Training"))
+
+do_format <- function(x) {
+  format(round(x, 2), nsmall = 2)
+}
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, error=FALSE, fig.align="center", fig.width = 10, height = 6}
+cs_all <- bind_rows(cs1, cs2, cs3, cs4, cs5, cs6)
+
+# Descriptive results
+hm.results <- tribble(
+  ~rowid, ~p2,
+  8, "Age 81-90 (25.0%) (+)", # Age & Computer
+  15, "High School (21.4%) (+)", # Education & Computer
+  21, "High School (50.0%) (-)", # Education & Tech Devices
+  28, "Male (58.3%) (-)\nFemale (82.9%) (+)", # Gender & Tech Devices
+  25, "Male (24.2%) (+)\nFemale (8.3%) (-)", # Gender & Virtual/In-Person Benefits
+  3, "Clayton (96.0%) (+)\nRockwood (42.6%) (-)", # School District & Likelihood
+  32, "White (2.2%) (-)", # Race x Virtual TUtoring Not Beneficial
+  42, "$15k-$25k (40.0%) (-)", # Income x Tech Devices
+  36, "< $15k (100.0%) (+)", # Income x Difficulty of Comp Use
+  37, "< $15k (100.0%) (+)" # Income x Comfort Using Internet
+)
+
+# Heat map
+hm <- cs_all %>%
+  select(Question, Type = IV, p.value, statistic, CramersV) %>%
+  left_join(qs.test, by = "Question") %>%
+  select(Question = q_title, Type, p.value, statistic, CramersV) %>%
+  mutate(Effect = ifelse(p.value <= 0.05, "Significant association*", "No significant association")) %>% # Strong
+  mutate(Effect = factor(Effect, levels = c("No significant association", "Significant association*"))) %>%
+  mutate(p = ifelse(p.value <= 0.05, paste0(do_format(statistic), "* (", do_format(CramersV), ")"), 
+                      paste0(do_format(statistic)))) %>%
+
+  rowid_to_column() %>%
+  left_join(hm.results, by = "rowid") %>%
+  mutate(p = ifelse(!is.na(p2), paste0(p, "\n", p2), p))
+
+# Table
+hm.csv <- hm %>%
+  select(Question, Type, p) %>%
+  pivot_wider(names_from = "Type", values_from = "p") %>%
+  arrange(desc(Question))
+
+# Heat Map
+hm$Question <- factor(hm$Question, levels = c("Uncomfortable Using Internet",
+                                              "Concern for In-Person Tutoring",
+                                              "Concern for Oasis Resources for Virtual Tutoring",
+                                              "Difficulty of Computer Use",
+                                              "Likely to Tutor Virtually",
+                                              "Number of Technology Devices",
+                                              "Virtual Tutoring Not Beneficial"))
+hm$Type <- factor(hm$Type, levels = c("School District", "Age", "Education", "Gender", "Race", "Income"))
+figure1.plot <- ggplot(hm, aes(x = Type, y = Question, fill = Effect)) +
+  geom_tile() +
+  geom_text(aes(label = p), size = 3) +
+  scale_fill_manual(values = c("grey95", "grey60")) +
+  theme_minimal() +
+  labs(x = "\nSurvey Respondent Demographics", y = "Survey Response\n", fill = "", caption = "") +
+  theme(legend.position = "top",
+        plot.caption = element_text(size = 7))
+figure1.plot
+```
+
+```{r include=FALSE, echo=FALSE}
+get_analyses2 <- function(iv, iv_name, q, exclude = c("Oasis Institute Training")) {
+
+  cs <- format(round(get_chi(q, iv, iv_name, exclude)$p.value, 2), nsmall = 2)
+
+  q <- as.name(q)
+  iv <- as.name(iv)
+  df <- df.brief %>%
+    select(!!iv, !!q) %>%
+    filter(!!iv != DK) %>%
+    filter(!!q != DK) %>%
+    filter(!(!!iv %in% exclude)) %>%
+    filter(!(!!iv %in% c("91-100"))) %>%
+    drop_na() %>%
+    count(!!iv, !!q, .drop = TRUE) %>% 
+    group_by(!!iv) %>%
+    mutate(pct = n/sum(n)) %>%
+    ungroup() %>%
+    mutate(text = percent(pct, accuracy = 0.1))
+  
+  df.samp <- df %>%
+    group_by(!!iv) %>%
+    summarize(tot = sum(n), .groups = "drop") %>%
+    mutate(caption = paste0(!!iv, " (n = ", tot, ")"))
+  caption = paste0(paste0(df.samp$caption, collapse = ", "), "; p = ", cs)
+
+  p <- ggplot(df, aes(x = !!iv, y = pct, fill = !!q)) +
+    geom_bar(stat = "identity", position = "stack") +
+    geom_text(aes(label = text, group = !!q), 
+          position = position_stack(vjust = 0.5),
+          size = 2.5,
+          color = "gray30") +
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+    theme_classic() +
+    scale_fill_npg() +
+    labs(x = iv_name, y = "", fill = "", title = "",
+         caption = caption) +
+    theme(legend.position = "top",
+          plot.title = element_text(size = 18),
+          plot.caption = element_text(size = 7),
+          text = element_text(size = 10))
+  
+  return(list(data = df, plot = p))
+}
+
+get_grid2 <- function(question_var) {
+  title = qs.test$q_title[match(question_var, qs.test$Question)]
+  iv <- c("dist", "age", "edu", "sex")
+  iv_names <- c("School District", "Age", "Education", "Gender")
+  p <- map2(iv, iv_names, get_analyses2, question_var)
+  ggpubr::ggarrange(p[[1]]$plot, p[[2]]$plot, p[[3]]$plot, p[[4]]$plot, ncol = 2, nrow = 2, common.legend = TRUE, legend = "top") %>%
+    annotate_figure(fig.lab = paste0(title, "\n"),
+                    fig.lab.face = "bold")
+}
+```
+
+\newpage
+
+# Stacked Bar Plots
+
+```{r echo=F, message=F, warning=F, error=F, fig.width=11.5, fig.height=7, fig.align="center", results="hide", fig.keep = "all"}
+qs_plot <- pull(qs.test, Question)
+lapply(qs_plot, get_grid2)
+```
+
+\newpage
+
+# Bonferroni Post-Hoc Tests
+
+```{r include=FALSE}
+get_chi2 <- function(q, iv, exclude) {
+  
+  p <- get_analyses2(iv, str_to_title(iv), q, exclude)$plot
+  
+  q <- as.name(q)
+  iv <- as.name(iv)
+  df.test <- df.brief %>%
+    select(!!iv, !!q) %>%
+    drop_na() %>%
+    filter(!!iv != DK) %>%
+    filter(!!q != DK) %>%
+    filter(!(!!iv %in% exclude)) %>%
+    filter(!(!!iv %in% c("91-100"))) %>%
+    mutate(!!q := fct_drop(!!q)) %>%
+    mutate(!!iv := fct_drop(!!iv))
+  cs <- chisq.test(pull(df.test, !!iv), pull(df.test, !!q))
+  bo <- chisq.posthoc.test::chisq.posthoc.test(table(df.test)) %>%
+    as_tibble() %>%
+    mutate(across(where(is.numeric), ~ifelse(. <= .05 & Value == "p values", paste0(round(., 2), "*"), round(., 2)))) %>%
+    kable(digits = 2) %>%
+    kable_styling(latex_options = "striped")
+  
+  print(p)
+  
+  return(bo)
+}
+```
+
+P-values of post-hoc $z$-tests using the Bonferroni method for multiple comparisons are reported below for statistically significant chi-square test of independence results. Note: *p < 0.05
+
+## Age * Ease of Computer Use
+```{r echo=FALSE, message=FALSE, warning=FALSE, error=FALSE, fig.width = 8, fig.height = 3, fig.align="center"}
+get_chi2(q = "Q10_PC", iv = "age", exclude = c("Oasis Institute Training"))
+```
+
+\newpage
+## Education * Technology Devices at Home
+```{r echo=FALSE, message=FALSE, warning=FALSE, error=FALSE, fig.width = 8, fig.height = 3, fig.align="center"}
+get_chi2(q = "num_tech", iv = "edu", exclude = c("Oasis Institute Training"))
+```
+
+\newpage
+## Education * Ease of Computer Use
+```{r echo=FALSE, message=FALSE, warning=FALSE, error=FALSE, fig.width = 8, fig.height = 3, fig.align="center"}
+get_chi2(q = "Q10_PC", iv = "edu", exclude = c("Oasis Institute Training"))
+```
+
+\newpage
+## Gender * Virtual vs. In-Person Benefits
+```{r echo=FALSE, message=FALSE, warning=FALSE, error=FALSE, fig.width = 8, fig.height = 3, fig.align="center"}
+get_chi2(q = "Q18", iv = "sex", exclude = c("Oasis Institute Training"))
+```
+
+\newpage
+## Gender * Technology Devices at Home
+```{r echo=FALSE, message=FALSE, warning=FALSE, error=FALSE, fig.width = 8, fig.height = 3, fig.align="center"}
+get_chi2(q = "num_tech", iv = "sex", exclude = c("Oasis Institute Training"))
+```
+
+\newpage
+## School District * Likelihood of Virtual Tutoring
+```{r echo=FALSE, message=FALSE, warning=FALSE, error=FALSE, fig.width = 8, fig.height = 3, fig.align="center"}
+get_chi2(q = "Q16", iv = "dist", exclude = c("Oasis Institute Training", "East St. Louis", "Northwest"))
+#get_chi2(q = "Q16", iv = "dist", exclude = c("Oasis Institute Training"))
+```
+
+\newpage
+## Race * Virtual vs. In-Person Benefits
+```{r echo=FALSE, message=FALSE, warning=FALSE, error=FALSE, fig.width = 8, fig.height = 3, fig.align="center"}
+get_chi2(q = "Q18", iv = "race", exclude = c("Oasis Institute Training"))
+```
+
+\newpage
+## Income * Number of Tech Devices
+```{r echo=FALSE, message=FALSE, warning=FALSE, error=FALSE, fig.width = 8, fig.height = 3, fig.align="center"}
+get_chi2(q = "num_tech", iv = "inc", exclude = c("Oasis Institute Training"))
+```
+
+\newpage
+## Income * Difficulty of Computer Use
+```{r echo=FALSE, message=FALSE, warning=FALSE, error=FALSE, fig.width = 8, fig.height = 3, fig.align="center"}
+get_chi2(q = "Q10_PC", iv = "inc", exclude = c("Oasis Institute Training"))
+```
+
+\newpage
+## Income * Comfort Using Internet
+```{r echo=FALSE, message=FALSE, warning=FALSE, error=FALSE, fig.width = 8, fig.height = 3, fig.align="center"}
+get_chi2(q = "Q12", iv = "inc", exclude = c("Oasis Institute Training"))
+```
+
+# Respondent Characteristics by School Districts
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, error=FALSE, fig.width=11.5, fig.height=7, fig.align="center"}
+get_analyses3 <- function(iv, iv_name, q, exclude = c("Oasis Institute Training")) {
+  
+  # flip iv and q
+  temp1 <- iv
+  temp2 <- q
+  iv <- temp2
+  q <- temp1
+  
+  cs <- format(round(get_chi(q, iv, iv_name, exclude)$p.value, 2), nsmall = 2)
+  
+  q <- as.name(q)
+  iv <- as.name(iv)
+  df <- df.brief %>%
+    select(!!iv, !!q) %>%
+    filter(!!iv != DK) %>%
+    filter(!!q != DK) %>%
+    filter(!(!!iv %in% exclude)) %>%
+    filter(!(!!iv %in% c("91-100"))) %>%
+    drop_na() %>%
+    count(!!iv, !!q, .drop = TRUE) %>% # we don't want empty groups in factors
+    group_by(!!iv) %>%
+    mutate(pct = n/sum(n)) %>%
+    ungroup() %>%
+    mutate(text = percent(pct, accuracy = 0.1))
+  
+  df.samp <- df %>%
+    group_by(!!iv) %>%
+    summarize(tot = sum(n), .groups = "drop") %>%
+    mutate(caption = paste0(!!iv, " (n = ", tot, ")"))
+  caption = paste0(paste0(df.samp$caption, collapse = ", "), "; p = ", cs)
+
+  p <- ggplot(df, aes(x = !!iv, y = pct, fill = !!q)) +
+    geom_bar(stat = "identity", position = "stack") +
+    geom_text(aes(label = text, group = !!q), 
+          position = position_stack(vjust = 0.5),
+          size = 2.5,
+          color = "gray30") +
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+    theme_classic() +
+    #scale_fill_npg() +
+    scale_fill_ucscgb() +
+    labs(x = "School District", y = "", fill = iv_name, title = "",
+         caption = caption) +
+    theme(legend.position = "top",
+          plot.title = element_text(size = 18),
+          plot.caption = element_text(size = 7),
+          text = element_text(size = 10))
+  
+  return(list(data = df, plot = p))
+}
+
+get_grid3 <- function(iv, iv_names, question_var = "dist") {
+  p <- map2(iv, iv_names, get_analyses3, question_var)
+  ggpubr::ggarrange(p[[1]]$plot, p[[2]]$plot, p[[3]]$plot, p[[4]]$plot, ncol = 2, nrow = 2, common.legend = F, legend = "top")
+}
+get_grid3(iv = c("age", "sex", "edu", "race"),
+          iv_names = c("Age", "Gender", "Education", "Race/Ethnicity"))
+get_grid3(iv = c("VID", "inc", "num_tech", "Q12"),
+          iv_names = c("Used Video Conferencing Software", "Annual Household Income", "Technology Devices at Home", "Comfort Using Internet"))
+get_grid3(iv = c("Q10_INT", "Q10_VID", "Q10_PHONE", "Q10_PC"),
+          iv_names = c("Ease of Internet Use", "Ease of Video Conferencing Software Use", "Ease of Smartphone Use", "Ease of Computer Use"))
+```
+
+\elandscape
